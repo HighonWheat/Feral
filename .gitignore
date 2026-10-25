@@ -1,0 +1,38 @@
+# Ignore massive LLM weights and Hugging Face cache
+*.safetensors
+*.safetensors.index.json
+*.bin
+*.gguf
+*.pth
+*.pt
+*.onnx
+.cache/
+.huggingface/
+
+# Ignore downloaded base model tokenizer/config artifacts (keep only our custom code)
+tokenizer.json
+tokenizer_config.json
+vocab.json
+merges.txt
+special_tokens_map.json
+added_tokens.json
+chat_template.jinja
+config.json
+generation_config.json
+preprocessor_config.json
+processor_config.json
+video_preprocessor_config.json
+
+# Ignore generated numpy vectors, datasets, and checkpoints
+*.npy
+*.jsonl
+*.parquet
+outputs/
+checkpoints/
+lora_model/
+
+# Ignore Python & Windows artifacts
+__pycache__/
+*.py[cod]
+.env
+.venv/
