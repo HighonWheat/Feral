@@ -30,6 +30,7 @@ video_preprocessor_config.json
 outputs/
 checkpoints/
 lora_model/
+feral_sandbox/
 
 # Ignore Python & Windows artifacts
 __pycache__/
