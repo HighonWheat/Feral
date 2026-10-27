@@ -31,6 +31,7 @@ outputs/
 checkpoints/
 lora_model/
 feral_sandbox/
+feral_ps_sandbox/
 
 # Ignore Python & Windows artifacts
 __pycache__/

@@ -1,30 +1,28 @@
-# Feral (Uncensored Qwen3.5-9B & Autonomous Agent)
+# Feral (Autonomous Qwen3.5-9B Software Engineering Agent)
 
-**Feral** is an experimental project built on top of `Qwen/Qwen3.5-9B` focused on mechanistic interpretability, activation steering / abliteration (uncensoring via residual stream refusal-direction projection), and local autonomous tool-use execution on consumer GPUs (4-bit NF4 via `bitsandbytes`).
+**Feral** is a local autonomous software engineering and research agent built on `Qwen/Qwen3.5-9B` (4-bit NF4 / `bfloat16` compute on RTX 5070 Ti `sm_120`), combining representation engineering (orthogonal residual stream projection) with execution-verified multi-tool trajectory distillation and mistake masking.
 
 ## Project Structure
 
-- **`inspect_residual_stream.py`** — Loads `Qwen3.5-9B` in 4-bit NF4 (`bfloat16` compute) and attaches PyTorch forward hooks across the 32 internal decoder layers (`Layer 0`, `Layer 15`, `Layer 31`) to intercept and inspect 4096-dimensional residual stream hidden state vectors on the final prompt token.
-- **`test_agent_brain.py`** — Autonomous multi-step ReAct agent loop using `<think>...</think>` reasoning chains and structured `<tool_call>` JSON execution to run live Windows PowerShell commands and process `<tool_response>` feedback.
-- **`LICENSE`** — MIT License.
+- **`inspect_residual_stream.py`** — Hooks into `model.model.layers` (`[0, 15, 31]`) to inspect 4,096-dim residual stream hidden states and L2 norm growth.
+- **`collect_refusal_vector.py` & `test_orthogonal_projection.py`** — Extracts contrast vectors at the `<|im_start|>assistant` decision boundary and applies unit-vector orthogonal projection across sweet-spot layers `14..19`.
+- **`test_agent_brain.py`** — Autonomous ReAct loop using `<think>...</think>` reasoning and `<tool_call>` JSON execution.
+- **`feral_core.py`** — Shared execution sandbox, unified `SYSTEM_FERAL` prompt, Feral Apex Toolchain implementations (`run_powershell`, `read_file_lines`, `apply_diff_patch`, `write_file`, `ast_repo_map`, `web_research`, `spawn_subagent`), and completion/mistake-masked tokenizer.
+- **`scenarios/`** — Modular task libraries (`powershell_tasks.py` and `code_fix_tasks.py`) used to generate verified training trajectories.
+- **`distill_verified_traces.py`** — Executes real PowerShell and Python bug-fix tasks in a throwaway sandbox to build `agent_curriculum_train.jsonl`.
+- **`expand_feral_arsenal_dataset.py`** — Replays multi-tool surgical repository workflows against a sandbox repo to build `feral_arsenal_trajectories.jsonl`.
+- **`validate_curriculum_dataset.py`** — Audits all trajectories (unified prompt, balanced tags, tool JSON schema, positional `-100` label masking, stop tokens) and writes a group-disjoint stratified `train.jsonl` / `val.jsonl` split.
 
-## Requirements
+## How to Add Your Own Training Tasks
 
-- Python 3.10+
-- CUDA-capable GPU (tested on RTX 5070 Ti with 4-bit quantization)
-- `torch`, `transformers`, `bitsandbytes`, `accelerate`
-
-## Usage
-
-Place the `Qwen3.5-9B` model weights and tokenizer files in the project root directory (automatically ignored by `.gitignore`), then run:
-
-```bash
-# Inspect internal layer activations / residual stream vectors
-python inspect_residual_stream.py
-
-# Run the autonomous PowerShell system agent
-python test_agent_brain.py
-```
+1. **Add a PowerShell or CLI task:** Append a dict to `PS_TASKS` in [`scenarios/powershell_tasks.py`](scenarios/powershell_tasks.py) (include an optional `linux` field to auto-generate a mistake-masked `Stage_B_Recovery` trace).
+2. **Add a Python bug-fix task:** Append a dict to `CODE_FIX_TASKS` in [`scenarios/code_fix_tasks.py`](scenarios/code_fix_tasks.py) with `buggy`, `search`, `replace`, and `verify_cmd`.
+3. **Regenerate and audit the dataset:**
+   ```powershell
+   python distill_verified_traces.py
+   python expand_feral_arsenal_dataset.py
+   python validate_curriculum_dataset.py
+   ```
 
 ## License
 

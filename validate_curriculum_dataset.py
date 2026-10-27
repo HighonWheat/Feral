@@ -1,11 +1,11 @@
 """
 Phase 2, Step 6 - Dataset Integrity & Token-Masking Audit
 =========================================================
-Merges every curriculum source into one dataset, audits each row, and writes a stratified
-train/validation split for Phase 3 SFT.
+Merges every curriculum source into one dataset, audits each row, and writes a
+group-disjoint, stage-stratified train/validation split for Phase 3 SFT.
 
 Sources:
-    agent_curriculum_train.jsonl      (Phase 2, Step 4: execution-verified PowerShell curriculum)
+    agent_curriculum_train.jsonl      (Phase 2, Step 4: execution-verified PowerShell & code-fix curriculum)
     feral_arsenal_trajectories.jsonl  (Phase 2, Step 5: Feral Apex Toolchain)
 
 Outputs:
@@ -21,42 +21,19 @@ import re
 import statistics
 import sys
 from collections import Counter, defaultdict
-from pathlib import Path
 
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 from transformers import AutoTokenizer
 
-ROOT = Path(__file__).resolve().parent
+from feral_core import ROOT, SYSTEM_FERAL, TOOL_SCHEMA, tokenize
+
 SOURCES = ["agent_curriculum_train.jsonl", "feral_arsenal_trajectories.jsonl"]
-MAX_SEQ_LEN = 4096          # planned SFT context window
+MAX_SEQ_LEN = 4096
 VAL_FRACTION = 0.15
 SEED = 42
 
-KNOWN_TOOLS = {
-    "run_powershell": ["command"],
-    "write_file": ["path", "content"],
-    "read_file_lines": ["path", "start_line", "end_line"],
-    "apply_diff_patch": ["path", "search_block", "replace_block"],
-    "ast_repo_map": ["directory"],
-    "web_research": ["query"],
-    "spawn_subagent": ["task_prompt"],
-}
-
 tok = AutoTokenizer.from_pretrained(str(ROOT))
 IM_END_ID = tok.convert_tokens_to_ids("<|im_end|>")
-
-
-def retokenize(messages):
-    """Rebuild input_ids/labels from messages exactly as the generators do."""
-    ids, labels = [], []
-    for msg in messages:
-        header = tok.encode(f"<|im_start|>{msg['role']}\n", add_special_tokens=False)
-        body = tok.encode(f"{msg['content']}<|im_end|>\n", add_special_tokens=False)
-        ids += header + body
-        labels += [-100] * len(header)
-        trained = msg["role"] == "assistant" and msg.get("learn", True)
-        labels += body if trained else [-100] * len(body)
-    return ids, labels
 
 
 def check_record(r):
@@ -64,9 +41,11 @@ def check_record(r):
     tid = r["id"]
     msgs = r["messages"]
 
-    # 1. Structure: system -> user -> ... -> assistant
+    # 1. Structure & unified system prompt
     if msgs[0]["role"] != "system" or msgs[1]["role"] != "user" or msgs[-1]["role"] != "assistant":
         errs.append("bad turn structure (must be system, user, ..., assistant)")
+    if msgs[0]["content"] != SYSTEM_FERAL:
+        errs.append("system prompt does not match canonical SYSTEM_FERAL")
     if not msgs[-1].get("learn", True):
         errs.append("final assistant turn is masked (model would never learn to finish)")
 
@@ -84,10 +63,10 @@ def check_record(r):
                     errs.append(f"turn {i}: invalid tool_call JSON ({e})")
                     continue
                 name = call.get("name")
-                if name not in KNOWN_TOOLS:
+                if name not in TOOL_SCHEMA:
                     errs.append(f"turn {i}: unknown tool {name!r}")
                     continue
-                missing = [k for k in KNOWN_TOOLS[name] if k not in call.get("arguments", {})]
+                missing = [k for k in TOOL_SCHEMA[name] if k not in call.get("arguments", {})]
                 if missing:
                     errs.append(f"turn {i}: {name} missing args {missing}")
             if c.count("<tool_call>") != c.count("</tool_call>"):
@@ -97,11 +76,11 @@ def check_record(r):
                 errs.append(f"turn {i}: tool_call without a following tool_response")
         elif "<tool_response>" in c and c.count("<tool_response>") != c.count("</tool_response>"):
             errs.append(f"turn {i}: unbalanced <tool_response> tags")
-        if "System.Management.Automation" in c:
-            errs.append(f"turn {i}: PowerShell wrapper noise in content")
+        if "System.Management.Automation" in c or "#< CLIXML" in c:
+            errs.append(f"turn {i}: PowerShell wrapper/CLIXML noise in content")
 
-    # 5. Stored tokens must exactly match a fresh re-tokenization (catches stale or hand-edited rows)
-    ids, labels = retokenize(msgs)
+    # 5. Stored tokens must match a fresh re-tokenization
+    ids, labels, _ = tokenize(msgs, tok)
     if ids != r["input_ids"] or labels != r["labels"]:
         errs.append("stored input_ids/labels do not match fresh tokenization")
     if len(r["input_ids"]) != len(r["labels"]):
@@ -109,9 +88,7 @@ def check_record(r):
     if len(r["input_ids"]) > MAX_SEQ_LEN:
         errs.append(f"sequence {len(r['input_ids'])} > MAX_SEQ_LEN {MAX_SEQ_LEN}")
 
-    # 6. Positional leak check: map every token position to the turn that owns it. Trained positions
-    #    must lie ONLY inside learn=True assistant bodies, and those bodies must be fully trained.
-    #    (A text search would false-positive on answers that merely *mention* "<tool_response>".)
+    # 6. Positional leak check: only learn=True assistant bodies may be trained
     pos = 0
     for i, m in enumerate(msgs):
         h = len(tok.encode(f"<|im_start|>{m['role']}\n", add_special_tokens=False))
@@ -129,13 +106,53 @@ def check_record(r):
     if pos != len(r["labels"]):
         errs.append("token positions do not cover the full sequence")
 
-    # 7. Stop token: the model must be trained to emit <|im_end|> once per learned assistant turn
+    # 7. Stop token: <|im_end|> trained once per learned assistant turn
     learned_turns = sum(1 for m in msgs if m["role"] == "assistant" and m.get("learn", True))
     trained_im_end = sum(1 for lab in r["labels"] if lab == IM_END_ID)
     if trained_im_end != learned_turns:
         errs.append(f"trained <|im_end|> count {trained_im_end} != learned assistant turns {learned_turns}")
 
     return [f"{tid}: {e}" for e in errs]
+
+
+def stratified_group_split(records):
+    """
+    Splits records into train and val such that:
+      1. Every stage has at least 1 validation row.
+      2. Linked Stage_A / Stage_B pairs sharing a `group` ID (e.g. `ps_line_count`) are kept
+         together in either train or val, preventing task-variation leakage across splits.
+    """
+    rng = random.Random(SEED)
+    by_group = defaultdict(list)
+    for r in records:
+        by_group[r.get("group", r["id"])].append(r)
+
+    # Separate multi-row groups (Stage_A + Stage_B pairs) from single-row groups
+    paired_groups = sorted(g for g, rows in by_group.items() if len(rows) > 1)
+    rng.shuffle(paired_groups)
+    val_pair_count = max(1, round(len(paired_groups) * VAL_FRACTION))
+    val_groups = set(paired_groups[:val_pair_count])
+
+    # For stages not covered by paired_groups, sample ~VAL_FRACTION of their single-row groups
+    by_stage_singles = defaultdict(list)
+    for g, rows in by_group.items():
+        if len(rows) == 1:
+            by_stage_singles[rows[0]["stage"]].append(g)
+
+    covered_stages = {r["stage"] for g in val_groups for r in by_group[g]}
+    for stage in sorted(by_stage_singles):
+        if stage in covered_stages:
+            continue
+        groups = sorted(by_stage_singles[stage])
+        rng.shuffle(groups)
+        k = max(1, round(len(groups) * VAL_FRACTION))
+        val_groups.update(groups[:k])
+
+    train, val = [], []
+    for r in records:
+        g = r.get("group", r["id"])
+        (val if g in val_groups else train).append(r)
+    return train, val
 
 
 def main():
@@ -150,7 +167,7 @@ def main():
         for row in rows:
             row["source"] = src
         records += rows
-        print(f"   {src:34s}: {len(rows):2d} rows")
+        print(f"   {src:34s}: {len(rows):3d} rows")
     print(f"   -> {len(records)} merged rows\n")
 
     print("2. Auditing every row...")
@@ -163,10 +180,12 @@ def main():
         errors += check_record(r)
 
     checks = [
+        "100% unified SYSTEM_FERAL system prompt across all rows",
         "turn structure + final assistant turn is trained",
         "balanced <think> / <tool_call> / <tool_response> tags",
         "every <tool_call> is valid JSON with a known tool and required args",
         "every <tool_call> is answered by a <tool_response>",
+        "zero PowerShell CLIXML / ErrorRecord wrapper noise",
         "stored tokens == fresh re-tokenization",
         "positional mask: only learn=True assistant bodies trained (system/user/tool/mistake turns = -100)",
         "<|im_end|> stop token trained once per learned assistant turn",
@@ -190,32 +209,28 @@ def main():
     masked = sum(1 for r in records for m in r["messages"] if m["role"] == "assistant" and not m.get("learn", True))
     print(f"  Mistake-masked assistant turns: {masked}")
     sys_prompts = Counter(r["messages"][0]["content"][:60] for r in records)
-    print(f"  Distinct system prompts: {len(sys_prompts)}")
-    for p, n in sys_prompts.items():
-        print(f"    {n:2d} rows | {p}...")
+    print(f"  Distinct system prompts: {len(sys_prompts)} (100% unified)")
 
-    print("\n4. Stratified train/val split (seed={}, val={:.0%} per stage, stages with <3 rows stay in train)".format(SEED, VAL_FRACTION))
-    by_stage = defaultdict(list)
-    for r in records:
-        by_stage[r["stage"]].append(r)
-    rng = random.Random(SEED)
-    train, val = [], []
-    for stage in sorted(by_stage):
-        rows = sorted(by_stage[stage], key=lambda x: x["id"])
-        rng.shuffle(rows)
-        k = max(1, round(len(rows) * VAL_FRACTION)) if len(rows) >= 3 else 0
-        val += rows[:k]
-        train += rows[k:]
-        print(f"  {stage:20s} | total {len(rows):2d} | train {len(rows) - k:2d} | val {k}")
+    print(f"\n4. Group-disjoint stratified train/val split (seed={SEED}, val~{VAL_FRACTION:.0%})")
+    train, val = stratified_group_split(records)
+    stages = sorted({r["stage"] for r in records})
+    for st in stages:
+        tr_n = sum(1 for r in train if r["stage"] == st)
+        va_n = sum(1 for r in val if r["stage"] == st)
+        print(f"  {st:20s} | total {tr_n + va_n:3d} | train {tr_n:3d} | val {va_n:2d}")
+        if va_n == 0:
+            print(f"SPLIT: FAIL - stage {st} has 0 validation rows")
+            sys.exit(1)
 
-    # Leakage check: no validation prompt may also appear as a training prompt
     train_prompts = {r["messages"][1]["content"] for r in train}
-    leaked = [r["id"] for r in val if r["messages"][1]["content"] in train_prompts]
-    if leaked:
-        print(f"SPLIT: FAIL - val prompts also in train: {leaked}")
+    leaked_prompts = [r["id"] for r in val if r["messages"][1]["content"] in train_prompts]
+    train_groups = {r.get("group", r["id"]) for r in train}
+    leaked_groups = [r["id"] for r in val if r.get("group", r["id"]) in train_groups]
+    if leaked_prompts or leaked_groups:
+        print(f"SPLIT: FAIL - leakage detected: prompts={leaked_prompts}, groups={leaked_groups}")
         sys.exit(1)
-    print(f"  [PASS] no val prompt appears in train")
-    print(f"  Val ids: {', '.join(sorted(r['id'] for r in val))}")
+    print("  [PASS] every curriculum stage is represented in val.jsonl")
+    print("  [PASS] zero prompt overlap and zero task-group overlap between train and val")
 
     for name, rows in (("train.jsonl", train), ("val.jsonl", val)):
         with open(ROOT / name, "w", encoding="utf-8") as f:
