@@ -53,7 +53,7 @@ SANDBOX_FILES = {
         "2026-10-30 10:02:05 ERROR Max retries exceeded\n"
         "2026-10-30 10:03:00 INFO  Fallback cache active\n"
     ),
-    "config/service.json": '{\n  "service": "feral-core",\n  "max_workers": 8,\n  "retry": true\n}\n',
+    "config/service.json": '{"service": "feral-core", "max_workers": 8, "retry": true}\n',
 }
 
 
