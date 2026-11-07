@@ -214,7 +214,7 @@ class PersistentPowerShellSession:
                 f"}} else {{ $global:__feral_err = $true; \"ERROR: $($_.Exception.Message)\" }} "
                 f"}} else {{ $_ }} "
                 f"}} | Out-String -Stream -Width 160 }} catch {{ $global:__feral_err = $true; \"ERROR: $($_.Exception.Message)\" }}; "
-                f"if ($global:__feral_err -or $Error.Count -gt 0) {{ $__ec = 1 }} "
+                f"if ($global:__feral_err) {{ $__ec = 1 }} "
                 f"elseif ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) {{ $__ec = $LASTEXITCODE }} "
                 f"else {{ $__ec = 0 }}; "
                 f"[Console]::WriteLine('{sentinel_prefix}|' + $__ec + '|' + (Get-Location).Path)\n"
