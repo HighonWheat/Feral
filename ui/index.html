@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FERAL // Odysseus Autonomous Command Center (Qwen3.5-9B GRPO DoRA)</title>
+  <link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+  <!-- ====================================================================
+       TOP TELEMETRY & NAVIGATION HEADER BAR
+       ==================================================================== -->
+  <header class="topbar">
+    <div class="brand-cluster">
+      <div class="brand-emblem">F//</div>
+      <div>
+        <div class="brand-title">FERAL COMMAND CENTER</div>
+        <div class="brand-subtitle">ODYSSEUS TACTICAL SHELL // QWEN3.5-9B-GRPO-DORA</div>
+      </div>
+    </div>
+
+    <nav class="nav-tabs" id="main-nav">
+      <button class="nav-tab active" data-target="view-chat">
+        <span>01 // CHAT HUB</span>
+      </button>
+      <button class="nav-tab" data-target="view-agents">
+        <span>02 // AGENTS BOARD</span>
+        <span class="tab-badge" id="badge-agents-count">3</span>
+      </button>
+      <button class="nav-tab" data-target="view-kb">
+        <span>03 // KNOWLEDGE VECTORS</span>
+        <span class="tab-badge" id="badge-kb-count">1</span>
+      </button>
+      <button class="nav-tab" data-target="view-integrations">
+        <span>04 // INTEGRATIONS &amp; COOKBOOK</span>
+      </button>
+      <button class="nav-tab" data-target="view-workbenches">
+        <span>05 // WORKBENCHES</span>
+      </button>
+    </nav>
+
+    <div class="telemetry-strip">
+      <div class="telemetry-pill" title="WebSocket Real-Time Stream Status">
+        <span class="status-dot" id="ws-status-dot"></span>
+        <span id="ws-status-label">WS: ONLINE</span>
+      </div>
+      <div class="telemetry-pill" title="NVIDIA Blackwell RTX 5070 Ti VRAM Allocation">
+        <span id="top-gpu-name">RTX 5070 Ti</span>
+        <div class="vram-mini-bar">
+          <div class="vram-mini-fill" id="top-vram-bar"></div>
+        </div>
+        <span id="top-vram-text">7643 / 16276 MiB</span>
+      </div>
+      <div class="telemetry-pill" title="Loop Watchdog & Sampling Temperature">
+        <span id="top-watchdog-text">TEMP: 0.00</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ====================================================================
+       MAIN WORKSPACE SHELL
+       ==================================================================== -->
+  <main class="workspace-shell">
+
+    <!-- ==================================================================
+         MODULE 1: THE CHAT INTERFACE (MAIN HUB + COLLAPSIBLE CONTEXT PANEL)
+         ================================================================== -->
+    <section class="module-view active" id="view-chat">
+      <!-- Left Tactical Preset Rail -->
+      <aside class="chat-left-rail">
+        <div>
+          <div class="rail-section-title">Autonomous Missions</div>
+          <button class="preset-btn" data-prompt="Run `python -m unittest discover -s tests` with `run_powershell`, read `src/discounts.py`, patch the discount bug with `apply_diff_patch`, and re-run the unit test to verify exit_code=0.">
+            <strong>[MISSION A] Auto-Fix Bug</strong>
+            Diagnose &amp; patch `src/discounts.py` until unit tests pass.
+          </button>
+          <button class="preset-btn" data-prompt="Run `ast_repo_map` on `.` to map all Python classes and functions in the workspace.">
+            <strong>[MISSION B] AST Repo Map</strong>
+            Extract structural symbol map of the repository.
+          </button>
+          <button class="preset-btn" data-prompt="Read lines 1 to 10 of `src/checkout.py` using `read_file_lines` and summarize how `checkout_total` works.">
+            <strong>[MISSION C] Inspect Code</strong>
+            Read `src/checkout.py` and explain coupon flow.
+          </button>
+          <button class="preset-btn" data-prompt="Use `web_research` with query `python unittest discover` to look up unittest CLI flags.">
+            <strong>[MISSION D] Docs Lookup</strong>
+            Query local technical index via `web_research`.
+          </button>
+        </div>
+
+        <div>
+          <div class="rail-section-title">Context Compactor</div>
+          <div class="settings-card" style="padding:11px; gap:6px;">
+            <div class="field-label">
+              <span>Active Context</span>
+              <span id="chat-token-gauge">0 / 4096 tok</span>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="chat-token-bar" style="width:4%;"></div>
+            </div>
+            <div style="font-size:11px; color:var(--text-muted); font-family:var(--font-mono);" id="compaction-pass-label">
+              Compaction Passes: #0 (Trigger: 75%)
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:auto;">
+          <button class="btn-secondary" id="btn-clear-chat" style="width:100%;">
+            Reset Session &amp; Watchdog
+          </button>
+        </div>
+      </aside>
+
+      <!-- Center Chat Stream & Command Composer -->
+      <div class="chat-center-hub">
+        <div class="chat-toolbar">
+          <div style="font-family:var(--font-mono); font-size:12px; color:var(--text-secondary);">
+            ACTIVE ENGINE: <strong style="color:var(--accent-cyan);" id="active-model-banner">Qwen3.5-9B-Feral-GRPO-DoRA</strong>
+            <span style="margin-left:10px; color:var(--accent-emerald);" id="last-speed-badge">14.1 tok/s (Fast Norm Fusion)</span>
+          </div>
+          <button class="btn-secondary" id="btn-toggle-context">
+            Toggle Context Panel &#9776;
+          </button>
+        </div>
+
+        <div class="chat-stream" id="chat-stream">
+          <!-- Initial welcome card -->
+          <div class="msg-card assistant">
+            <div class="msg-header">
+              <span>FERAL CORE // SYSTEM READY</span>
+              <span>RTX 5070 Ti (sm_120)</span>
+            </div>
+            <div class="md-content">
+              <p>Welcome to the <strong>Feral Desktop Command Center</strong> (inspired by Project Odysseus). Select an autonomous mission on the left or enter a coding, terminal, or research task below.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="chat-composer">
+          <textarea
+            id="chat-input"
+            class="chat-input"
+            placeholder="Instruct Feral LLM Client (e.g., 'Read src/discounts.py and fix the coupon calculation bug')..."
+          ></textarea>
+          <button class="btn-primary" id="btn-send-chat">EXECUTE &rarr;</button>
+        </div>
+      </div>
+
+      <!-- Right Collapsible Sidebar ("Context Panel") -->
+      <aside class="context-sidebar" id="context-sidebar">
+        <div class="pane-header">
+          <span class="rail-section-title" style="margin:0; color:var(--accent-cyan);">CONTEXT PANEL</span>
+          <span style="font-family:var(--font-mono); font-size:10.5px; color:var(--accent-emerald);">LIVE CONFIG</span>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="ctx-model-select">
+            <span>Local Model Checkpoint</span>
+          </label>
+          <select id="ctx-model-select" class="select-control">
+            <option value="Qwen3.5-9B-Feral-GRPO-DoRA">Qwen3.5-9B-Feral-GRPO-DoRA (transformers-4bit-dora)</option>
+            <option value="Qwen3.5-9B-Feral-SFT-DoRA">Qwen3.5-9B-Feral-SFT-DoRA (transformers-4bit-dora)</option>
+            <option value="feral-qwen3.5-9b-grpo-q4_k_m.gguf">feral-qwen3.5-9b-grpo-q4_k_m.gguf (gguf-q4_k_m)</option>
+            <option value="Qwen3.5-9B-Base-ZeroShot">Qwen3.5-9B-Base-ZeroShot (transformers-4bit)</option>
+          </select>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="ctx-system-prompt">
+            <span>System Prompt (`SYSTEM_FERAL`)</span>
+          </label>
+          <textarea id="ctx-system-prompt" class="textarea-control">You are Feral, a principal autonomous software engineering and research agent running locally on Windows 11 (PowerShell) and NVIDIA RTX 5070 Ti. Reason inside &lt;think&gt;...&lt;/think&gt; and emit JSON tool calls inside &lt;tool_call&gt;...&lt;/tool_call&gt;.</textarea>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="ctx-temp-slider">
+            <span>Sampling Temperature</span>
+            <strong id="ctx-temp-val" style="color:var(--accent-cyan);">0.00</strong>
+          </label>
+          <input type="range" id="ctx-temp-slider" class="range-slider" min="0" max="1.5" step="0.05" value="0.0" />
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="ctx-tokens-slider">
+            <span>Max New Tokens</span>
+            <strong id="ctx-tokens-val" style="color:var(--accent-cyan);">512</strong>
+          </label>
+          <input type="range" id="ctx-tokens-slider" class="range-slider" min="64" max="2048" step="32" value="512" />
+        </div>
+
+        <button class="btn-primary" id="btn-save-context" style="width:100%;">
+          Apply Context Config
+        </button>
+
+        <div class="field-group" style="margin-top:8px;">
+          <div class="field-label">
+            <span>Pinned `AGENT_STATE.md`</span>
+          </div>
+          <pre class="tool-obs-box" id="ctx-agent-state-md" style="max-height:190px; margin:0;"># AGENT_STATE.md — Feral Pinned Working Memory
+- Active Goal: Awaiting operator mission
+- Compaction Pass: #0 (75% trigger active)</pre>
+        </div>
+      </aside>
+    </section>
+
+    <!-- ==================================================================
+         MODULE 2: THE AUTONOMOUS AGENTS BOARD & HIERARCHICAL TASK DAG
+         ================================================================== -->
+    <section class="module-view" id="view-agents">
+      <div class="board-layout">
+        <!-- Main Drag-and-Drop / Grid Dashboard -->
+        <div class="agents-grid-pane">
+          <div class="pane-header">
+            <div>
+              <h2 style="font-family:var(--font-mono); font-size:15px;">AUTONOMOUS AGENTS BOARD</h2>
+              <p style="font-size:12px; color:var(--text-secondary);">
+                Drag and drop agent cards across grid slots or deploy isolated sub-agent workers sharing `FeralLLMClient` (0 MiB extra model VRAM).
+              </p>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <input id="new-agent-name" class="input-control" placeholder="Agent Name (e.g. Security Auditor)" style="width:190px;" />
+              <input id="new-agent-goal" class="input-control" placeholder="Assigned autonomous goal..." style="width:280px;" />
+              <button class="btn-primary" id="btn-create-agent">+ Add Agent Card</button>
+            </div>
+          </div>
+
+          <div class="agents-grid" id="agents-grid"></div>
+        </div>
+
+        <!-- Right Hierarchical Task DAG Sidebar -->
+        <aside class="dag-sidebar">
+          <div>
+            <div class="rail-section-title">SQLite WAL Task DAG Orchestrator</div>
+            <div style="font-family:var(--font-mono); font-size:12.5px; font-weight:700; margin-bottom:6px;" id="dag-mission-title">
+              Mission: Diagnose &amp; Patch Microservice
+            </div>
+            <div class="field-label">
+              <span>Topological Completion</span>
+              <span id="dag-progress-label">0%</span>
+            </div>
+            <div class="progress-track" style="margin-top:4px;">
+              <div class="progress-fill" id="dag-progress-bar" style="width:0%;"></div>
+            </div>
+          </div>
+
+          <div id="dag-nodes-list" style="flex:1; overflow-y:auto;"></div>
+
+          <div class="settings-card" style="padding:12px; gap:8px;">
+            <div class="rail-section-title" style="margin:0;">+ Append DAG Task Node</div>
+            <input id="dag-node-id" class="input-control" placeholder="Node ID (e.g. step-4-bench)" />
+            <input id="dag-node-title" class="input-control" placeholder="Task Title" />
+            <input id="dag-node-deps" class="input-control" placeholder="Depends on (comma-separated IDs)" />
+            <button class="btn-secondary" id="btn-add-dag-node" style="width:100%;">Add Node to SQLite DAG</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ==================================================================
+         MODULE 3: KNOWLEDGE BASE & VECTOR STORAGE UI (CHROMADB / SQLITE)
+         ================================================================== -->
+    <section class="module-view" id="view-kb">
+      <div class="kb-layout">
+        <!-- Left Drag-and-Drop Document Uploader & Collection Creator -->
+        <aside class="kb-ingest-sidebar">
+          <div>
+            <div class="rail-section-title">1. Target Knowledge Cluster</div>
+            <select id="kb-target-collection" class="select-control"></select>
+          </div>
+
+          <div>
+            <div class="rail-section-title">2. Drag &amp; Drop Local Documents</div>
+            <div class="dropzone" id="kb-dropzone">
+              <div style="font-family:var(--font-mono); font-weight:700; color:var(--accent-cyan); margin-bottom:4px;">
+                DROP .TXT, .MD, OR .PDF FILES HERE
+              </div>
+              <div style="font-size:11.5px; color:var(--text-secondary);">
+                or click to browse local filesystem for automatic chunking &amp; 384-dim L2 embedding
+              </div>
+              <input type="file" id="kb-file-input" accept=".txt,.md,.pdf,.py,.json" style="display:none;" />
+            </div>
+          </div>
+
+          <div class="settings-card" style="padding:12px; gap:8px;">
+            <div class="rail-section-title" style="margin:0;">Quick Document Snippet Ingest</div>
+            <input id="kb-quick-filename" class="input-control" placeholder="Filename (e.g. blackwell_notes.md)" value="blackwell_notes.md" />
+            <textarea id="kb-quick-content" class="textarea-control" style="min-height:76px;" placeholder="Paste markdown or text to embed into the selected collection..."></textarea>
+            <button class="btn-primary" id="btn-kb-upload-snippet" style="width:100%;">Embed &amp; Store Document</button>
+          </div>
+
+          <div class="settings-card" style="padding:12px; gap:8px;">
+            <div class="rail-section-title" style="margin:0;">+ Create New Collection</div>
+            <input id="kb-new-col-id" class="input-control" placeholder="Collection ID (e.g. repo-docs)" />
+            <input id="kb-new-col-name" class="input-control" placeholder="Cluster Display Name" />
+            <input id="kb-new-col-desc" class="input-control" placeholder="Cluster Description" />
+            <button class="btn-secondary" id="btn-kb-create-col" style="width:100%;">Create Vector Collection</button>
+          </div>
+        </aside>
+
+        <!-- Right Collections Grid + Semantic Vector Search -->
+        <div class="kb-main-pane">
+          <div class="pane-header">
+            <div>
+              <h2 style="font-family:var(--font-mono); font-size:15px;">KNOWLEDGE CLUSTERS &amp; CHROMADB VECTOR STORAGE</h2>
+              <p style="font-size:12px; color:var(--text-secondary);">
+                Real-time 384-dimensional L2-normalized semantic embeddings with live ingestion progress bars.
+              </p>
+            </div>
+          </div>
+
+          <div class="collections-grid" id="kb-collections-grid"></div>
+
+          <div class="settings-card">
+            <div class="rail-section-title" style="margin:0; color:var(--accent-cyan);">
+              SEMANTIC VECTOR RETRIEVAL TESTBENCH (COSINE SIMILARITY)
+            </div>
+            <div style="display:flex; gap:10px;">
+              <input id="kb-query-input" class="input-control" placeholder="Ask a technical question across the selected Knowledge Cluster..." value="How fast is Feral DoRA generation with precomputed weight norms?" />
+              <button class="btn-primary" id="btn-kb-search">SEARCH VECTORS</button>
+            </div>
+            <div id="kb-results-list" style="display:flex; flex-direction:column; gap:8px; margin-top:6px;"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================================
+         MODULE 4: INTEGRATIONS PANEL & HARDWARE-AWARE COOKBOOK
+         ================================================================== -->
+    <section class="module-view" id="view-integrations">
+      <div class="integrations-layout">
+        <!-- Card 1: Web Search Providers & Browser Vision -->
+        <div class="settings-card">
+          <div class="pane-header">
+            <span class="agent-title">WEB SEARCH PROVIDERS &amp; VISION</span>
+            <span class="status-badge status-Ready">MCPBrowserVisionServer</span>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div style="font-weight:600;">SearXNG Metasearch JSON API</div>
+              <div style="font-size:11.5px; color:var(--text-secondary);">Route live web queries through self-hosted SearXNG instance</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="int-searxng-enabled" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="field-group">
+            <label class="field-label"><span>SearXNG API Endpoint</span></label>
+            <input id="int-searxng-endpoint" class="input-control" value="http://localhost:8080/search" />
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div style="font-weight:600;">Headless Chromium DOM Extractor</div>
+              <div style="font-size:11.5px; color:var(--text-secondary);">Strip scripts/ads and convert HTML pages into clean Markdown</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="int-headless-enabled" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div style="font-weight:600;">Live Viewport Screenshot Capture (`1280x800`)</div>
+              <div style="font-size:11.5px; color:var(--text-secondary);">Capture PNG frames via native Windows 11 Chrome/Edge</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="int-vision-enabled" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Card 2: Local Email Clients (IMAP / SMTP Configs) -->
+        <div class="settings-card">
+          <div class="pane-header">
+            <span class="agent-title">LOCAL EMAIL CLIENT BRIDGE (IMAP / SMTP)</span>
+            <span class="status-badge status-Idle" id="badge-email-state">MODULAR EXT</span>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div style="font-weight:600;">Enable Autonomous IMAP/SMTP Dispatch</div>
+              <div style="font-size:11.5px; color:var(--text-secondary);">Connect to ProtonMail Bridge, Mailpit, or local IMAP/SMTP relay</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="int-email-enabled" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div style="display:grid; grid-template-columns:2fr 1fr; gap:8px;">
+            <div class="field-group">
+              <label class="field-label"><span>IMAP Host</span></label>
+              <input id="int-imap-host" class="input-control" value="127.0.0.1" />
+            </div>
+            <div class="field-group">
+              <label class="field-label"><span>IMAP Port</span></label>
+              <input id="int-imap-port" type="number" class="input-control" value="1143" />
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:2fr 1fr; gap:8px;">
+            <div class="field-group">
+              <label class="field-label"><span>SMTP Host</span></label>
+              <input id="int-smtp-host" class="input-control" value="127.0.0.1" />
+            </div>
+            <div class="field-group">
+              <label class="field-label"><span>SMTP Port</span></label>
+              <input id="int-smtp-port" type="number" class="input-control" value="1025" />
+            </div>
+          </div>
+          <div class="field-group">
+            <label class="field-label"><span>Agent Mailbox Identity</span></label>
+            <input id="int-email-account" class="input-control" value="feral-agent@localhost.local" />
+          </div>
+        </div>
+
+        <!-- Card 3: Calendar Sync & Self-Healing Reliability Watchdogs -->
+        <div class="settings-card">
+          <div class="pane-header">
+            <span class="agent-title">CALENDAR SYNC &amp; SELF-HEALING GUARDS</span>
+            <span class="status-badge status-Ready">PHASE 6 ACTIVE</span>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div style="font-weight:600;">CalDAV / Local ICS Calendar Sync</div>
+              <div style="font-size:11.5px; color:var(--text-secondary);">Schedule overnight DAG runs around user calendar blocks</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="int-calendar-enabled" />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="field-group">
+            <label class="field-label"><span>CalDAV / ICS Feed URL</span></label>
+            <input id="int-caldav-endpoint" class="input-control" value="http://localhost:5232/feral/calendar.ics" />
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div style="font-weight:600;">Canonical SHA-256 Loop Watchdog</div>
+              <div style="font-size:11.5px; color:var(--text-secondary);">Block `A->A` and `A->B->A->B` tool loops &amp; bump temperature (`0.00 -> 0.45`)</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="int-watchdog-enabled" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div style="font-weight:600;">3-Strike Git Time-Travel Auto-Rollback</div>
+              <div style="font-size:11.5px; color:var(--text-secondary);">Auto `git reset --hard` to last `[GREEN]` commit after 3 failed edits</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="int-timetravel-enabled" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+          <button class="btn-primary" id="btn-save-integrations" style="width:100%; margin-top:4px;">
+            Save Integrations Configuration
+          </button>
+        </div>
+
+        <!-- Card 4: RTX 5070 Ti Hardware-Aware "Cookbook" Telemetry -->
+        <div class="settings-card">
+          <div class="pane-header">
+            <span class="agent-title">HARDWARE-AWARE COOKBOOK // RTX 5070 Ti</span>
+            <span class="status-badge status-Running" id="hw-arch-badge">BLACKWELL sm_120</span>
+          </div>
+          <div class="field-group">
+            <div class="field-label">
+              <span>VRAM Allocation (`cuda:0`)</span>
+              <strong id="hw-vram-detail" style="color:var(--accent-emerald);">7642.9 / 16275.8 MiB (47.0%)</strong>
+            </div>
+            <div class="progress-track">
+              <div class="progress-fill" id="hw-vram-bar" style="width:47%;"></div>
+            </div>
+          </div>
+          <div class="tool-obs-box" id="hw-cookbook-box" style="margin:0; max-height:210px;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================================================================
+         MODULE 5: DEVELOPER WORKBENCHES (DIFF LEDGER, GIT TIME-TRAVEL, TERMINAL, VISION)
+         ================================================================== -->
+    <section class="module-view" id="view-workbenches">
+      <div class="workbench-layout">
+        <!-- Pane 1: Unified Diff Viewer & 1-Click Patch Rollback -->
+        <div class="settings-card">
+          <div class="pane-header">
+            <span class="agent-title">UNIFIED DIFF LEDGER (`MCPCodeEditorServer`)</span>
+            <span class="status-badge status-Ready" id="diff-count-badge">0 PATCHES</span>
+          </div>
+          <div id="workbench-diff-list" style="display:flex; flex-direction:column; gap:10px; max-height:290px; overflow-y:auto;"></div>
+        </div>
+
+        <!-- Pane 2: Git Time-Travel Timeline -->
+        <div class="settings-card">
+          <div class="pane-header">
+            <span class="agent-title">GIT TIME-TRAVEL CHECKPOINTS (`GitTimeTravelManager`)</span>
+            <span class="status-badge status-Ready" id="git-head-badge">HEAD</span>
+          </div>
+          <div id="workbench-git-list" style="display:flex; flex-direction:column; gap:8px; max-height:290px; overflow-y:auto;"></div>
+        </div>
+
+        <!-- Pane 3: Persistent Windows PowerShell Console -->
+        <div class="settings-card">
+          <div class="pane-header">
+            <span class="agent-title">PERSISTENT POWERSHELL SESSION (`MCPTerminalServer`)</span>
+            <span class="status-badge status-Running">STATEFUL CWD/ENV</span>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <input id="term-cmd-input" class="input-control" placeholder="Run PowerShell command (e.g. python -m unittest discover -s tests)..." value="python -m unittest discover -s tests" />
+            <button class="btn-primary" id="btn-run-term">RUN</button>
+          </div>
+          <pre class="agent-console" id="workbench-term-log" style="height:210px;"></pre>
+        </div>
+
+        <!-- Pane 4: Live Headless Chromium Browser Vision Feed -->
+        <div class="settings-card">
+          <div class="pane-header">
+            <span class="agent-title">LIVE HEADLESS CHROMIUM VISION FEED (`1280x800`)</span>
+            <button class="btn-secondary" id="btn-capture-vision">Capture Local UI Frame</button>
+          </div>
+          <div id="workbench-vision-box" style="display:flex; flex-direction:column; gap:8px;"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/ui/app.js"></script>
+</body>
+</html>

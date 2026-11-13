@@ -46,7 +46,12 @@ from pydantic import BaseModel
 from context_compactor import ContextCompactor, LocalVectorKnowledgeBase, build_minimal_pdf
 from dag_orchestrator import DAGOrchestrator
 from feral_core import ROOT, SYSTEM_FERAL
-from feral_llm_client import FeralLLMClient, list_available_local_models, parse_feral_output
+from feral_llm_client import (
+    FeralLLMClient,
+    GenerationConfigState,
+    list_available_local_models,
+    parse_feral_output,
+)
 from git_time_travel import GitTimeTravelManager
 from loop_watchdog import LoopWatchdog
 from test_feral_core import FeralMCPHost, seed_broken_checkout_repo
@@ -431,7 +436,7 @@ class FeralCommandCenter:
             # 1. The Chat Interface (Main Hub) + Right Sidebar ("Context Panel")
             "chat_hub": {
                 "messages": self.chat_ui_log[-60:],
-                "context_panel": base_snap["context_panel"],
+                "context_panel": base_snap["context_panel"] or asdict(GenerationConfigState()),
                 "available_models": base_snap["available_models"],
                 "compaction": {
                     "active_tokens": self.compactor.count_messages_tokens(self.chat_messages),
