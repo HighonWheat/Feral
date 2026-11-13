@@ -962,7 +962,8 @@ def run_self_test() -> None:
 
     print("1. Initializing `FeralCommandCenter` on RTX 5070 Ti (`cuda:0`)...")
     if SANDBOX_WORKSPACE.exists():
-        shutil.rmtree(SANDBOX_WORKSPACE)
+        import os, stat
+        shutil.rmtree(SANDBOX_WORKSPACE, onexc=lambda fn, p, _: (os.chmod(p, stat.S_IWRITE), fn(p)))
     for db_file in (DAG_DB_PATH, KB_DB_PATH):
         for ext in ("", "-wal", "-shm"):
             p = Path(str(db_file) + ext)

@@ -137,7 +137,8 @@ class FeralMCPHost:
 def seed_broken_checkout_repo(workspace: Path) -> None:
     """Creates a multi-file Python checkout microservice with a realistic discount calculation bug."""
     if workspace.exists():
-        shutil.rmtree(workspace)
+        import os, stat
+        shutil.rmtree(workspace, onexc=lambda fn, p, _: (os.chmod(p, stat.S_IWRITE), fn(p)))
     (workspace / "src").mkdir(parents=True, exist_ok=True)
     (workspace / "tests").mkdir(parents=True, exist_ok=True)
 
